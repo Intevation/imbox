@@ -1,0 +1,16 @@
+Source: imbox
+Maintainer: Sascha Wilde <wilde@intevation.de>
+Section: python
+Priority: optional
+Build-Depends: dh-python, python3-setuptools, python3-all, debhelper (>= 9)
+Standards-Version: 3.9.6
+Homepage: https://github.com/martinrusev/imbox
+
+Package: python3-imbox
+Architecture: all
+Depends: ${misc:Depends}, ${python3:Depends}
+Description: Python IMAP for Human beings
+ Imbox - Python IMAP for Humans
+ .
+ Python library for reading IMAP mailboxes and converting email
+ content to machine readable data.

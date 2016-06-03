@@ -1,0 +1,17 @@
+imbox (0.8-1~intevation.0.1~beta1) unstable; urgency=low
+
+  * Security: check TLS certificate validity by default
+
+ -- Gernot Schulz <gernot@intevation.de>  Fri, 03 Jun 2016 15:59:00 +0200
+
+imbox (0.8-1) unstable; urgency=low
+
+  * New upstream release
+
+ -- Sascha Wilde <wilde@intevation.de>  Mon, 09 May 2016 17:07:55 +0200
+
+imbox (0.7-1) unstable; urgency=low
+
+  * source package automatically created by stdeb 0.8.5
+
+ -- Sascha Wilde <wilde@intevation.de>  Thu, 31 Mar 2016 11:42:29 +0000

@@ -1,0 +1,243 @@
+Description: Always check TLS certificate validity
+ The most relevant Git commit message is:
+ .
+  Allow the user to supply a custom ssl context
+ .
+  The new ImapTransport parameter ssl_context replaces the usesslcontext
+  parameter and allows the user to supply their own ssl context object. If
+  ssl_context is not given, but ssl is true, python's default ssl context
+  is used. That default context is the one that actually does some
+  certificate checks, such as whether the hostname matches the names given
+  in the server's certificate and not the default context used by
+  IMAP4_SSL when instantiated with ssl_context=None which does not
+  certificate checks at all.
+ . 
+  The Imbox class is extended with the same ssl_context parameter which is
+  simply passed through to ImapTransport.
+ .
+  This commit together with the previous commits from Dustin Demuth
+  changes Imbox in a slightly incompatible way: SSL-Certificates are now
+  checked by default whereas before they were not checked at all. This
+  improves security substantially but users need to be aware that working
+  programs might start raising exceptions due to failing certificate
+  checks.
+ .
+ See https://github.com/Intevation/imbox.
+ .
+ This patch is hopefully a temporary measure until the patch gets merged
+ upstream.
+
+Origin: vendor, >https://github.com/Intevation/imbox.
+
+--- /dev/null
++++ imbox-0.8/.travis.yml
+@@ -0,0 +1,10 @@
++language: python
++python:
++  - "2.7"
++  - "3.2"
++  - "3.3"
++  - "3.4"
++  - "3.5"
++install:
++  - python setup.py -q install
++script: nosetests
+--- imbox-0.8.orig/imbox/__init__.py
++++ imbox-0.8/imbox/__init__.py
+@@ -8,9 +8,11 @@ logger = logging.getLogger(__name__)
+ 
+ class Imbox(object):
+ 
+-    def __init__(self, hostname, username=None, password=None, ssl=True, port=None):
++    def __init__(self, hostname, username=None, password=None, ssl=True,
++                 port=None, ssl_context=None):
+ 
+-        self.server = ImapTransport(hostname, ssl=ssl, port=port)
++        self.server = ImapTransport(hostname, ssl=ssl, port=port,
++                                    ssl_context=None)
+         self.hostname = hostname
+         self.username = username
+         self.password = password
+--- imbox-0.8.orig/imbox/imap.py
++++ imbox-0.8/imbox/imap.py
+@@ -1,25 +1,33 @@
+ from imaplib import IMAP4, IMAP4_SSL
+ 
+ import logging
++import ssl as pythonssllib
++
+ logger = logging.getLogger(__name__)
+ 
++
+ class ImapTransport(object):
+ 
+-    def __init__(self, hostname, port=None, ssl=False):
++    def __init__(self, hostname, port=None, ssl=True, ssl_context=None):
+         self.hostname = hostname
+         self.port = port
++        kwargs = {}
+ 
+         if ssl:
+             self.transport = IMAP4_SSL
+             if not self.port:
+                 self.port = 993
++            if ssl_context is None:
++                ssl_context = pythonssllib.create_default_context()
++            kwargs["ssl_context"] = ssl_context
+         else:
+             self.transport = IMAP4
+             if not self.port:
+                 self.port = 143
+ 
+-        self.server = self.transport(self.hostname, self.port)
+-        logger.debug("Created IMAP4 transport for {host}:{port}".format(host=self.hostname, port=self.port))
++        self.server = self.transport(self.hostname, self.port, **kwargs)
++        logger.debug("Created IMAP4 transport for {host}:{port}"
++                     .format(host=self.hostname, port=self.port))
+ 
+     def list_folders(self):
+         logger.debug("List all folders in mailbox")
+@@ -28,5 +36,6 @@ class ImapTransport(object):
+     def connect(self, username, password):
+         self.server.login(username, password)
+         self.server.select()
+-        logger.debug("Logged into server {} and selected mailbox 'INBOX'".format(self.hostname))
++        logger.debug("Logged into server {} and selected mailbox 'INBOX'"
++                     .format(self.hostname))
+         return self.server
+--- /dev/null
++++ imbox-0.8/tests/parser_tests.py
+@@ -0,0 +1,94 @@
++# Encoding: utf-8
++from __future__ import unicode_literals
++import unittest
++from imbox.parser import *
++
++raw_email = """Delivered-To: johndoe@gmail.com
++X-Originating-Email: [martin@amon.cx]
++Message-ID: <test0@example.com>
++Return-Path: martin@amon.cx
++Date: Tue, 30 Jul 2013 15:56:29 +0300
++From: Martin Rusev <martin@amon.cx>
++MIME-Version: 1.0
++To: John Doe <johndoe@gmail.com>
++Subject: Test email - no attachment
++Content-Type: multipart/alternative;
++    boundary="------------080505090108000500080106"
++X-OriginalArrivalTime: 30 Jul 2013 12:56:43.0604 (UTC) FILETIME=[3DD52140:01CE8D24]
++
++--------------080505090108000500080106
++Content-Type: text/plain; charset="ISO-8859-1"; format=flowed
++Content-Transfer-Encoding: 7bit
++
++Hi, this is a test email with no attachments
++
++--------------080505090108000500080106
++Content-Type: text/html; charset="ISO-8859-1"
++Content-Transfer-Encoding: 7bit
++
++<html><head>
++<meta http-equiv="content-type" content="text/html; charset=ISO-8859-1"></head><body
++ bgcolor="#FFFFFF" text="#000000">
++Hi, this is a test email with no <span style="font-weight: bold;">attachments</span><br>
++</body>
++</html>
++
++--------------080505090108000500080106--
++"""
++
++raw_email_encoded = b"""Delivered-To: receiver@example.com
++Return-Path: <sender@example.com>
++Date: Sat, 26 Mar 2016 13:55:30 +0300 (FET)
++From: sender@example.com
++To: receiver@example.com
++Message-ID: <811170233.1296.1345983710614.JavaMail.bris@BRIS-AS-NEW.site>
++Subject: =?ISO-8859-5?B?suvf2OHa0CDf3iDa0ODi1Q==?=
++MIME-Version: 1.0
++Content-Type: multipart/mixed; 
++	boundary="----=_Part_1295_1644105626.1458989730614"
++
++------=_Part_1295_1644105626.1458989730614
++Content-Type: text/html; charset=ISO-8859-5
++Content-Transfer-Encoding: quoted-printable
++
++=B2=EB=DF=D8=E1=DA=D0 =DF=DE =DA=D0=E0=E2=D5 1234
++------=_Part_1295_1644105626.1458989730614--
++"""
++
++
++class TestParser(unittest.TestCase):
++
++    def test_parse_email(self):
++        parsed_email = parse_email(raw_email)
++
++        self.assertEqual(raw_email, parsed_email.raw_email)
++        self.assertEqual('Test email - no attachment', parsed_email.subject)
++        self.assertEqual('Tue, 30 Jul 2013 15:56:29 +0300', parsed_email.date)
++        self.assertEqual('<test0@example.com>', parsed_email.message_id)
++
++    def test_parse_email_encoded(self):
++        parsed_email = parse_email(raw_email_encoded)
++
++        self.assertEqual('Выписка по карте', parsed_email.subject)
++        self.assertEqual('Выписка по карте 1234', parsed_email.body['html'][0])
++
++    def test_parse_email_ignores_header_casing(self):
++        self.assertEqual('one', parse_email('Message-ID: one').message_id)
++        self.assertEqual('one', parse_email('Message-Id: one').message_id)
++        self.assertEqual('one', parse_email('Message-id: one').message_id)
++        self.assertEqual('one', parse_email('message-id: one').message_id)
++
++    # TODO - Complete the test suite
++    def test_parse_attachment(self):
++        pass
++
++    def test_decode_mail_header(self):
++        pass
++   
++    def test_get_mail_addresses(self):
++
++        to_message_object = email.message_from_string("To: John Doe <johndoe@gmail.com>")
++        self.assertEqual([{'email': 'johndoe@gmail.com', 'name': 'John Doe'}], get_mail_addresses(to_message_object, 'to'))
++
++        from_message_object = email.message_from_string("From: John Smith <johnsmith@gmail.com>")
++        self.assertEqual([{'email': 'johnsmith@gmail.com', 'name': 'John Smith'}], get_mail_addresses(from_message_object, 'from'))
+--- /dev/null
++++ imbox-0.8/tests/query_tests.py
+@@ -0,0 +1,36 @@
++import unittest
++from imbox.query import build_search_query
++from datetime import date
++
++
++class TestQuery(unittest.TestCase):
++
++    def test_all(self):
++
++        res = build_search_query()
++        self.assertEqual(res, "(ALL)")
++
++    def test_unread(self):
++
++        res = build_search_query(unread=True)
++        self.assertEqual(res, "(UNSEEN)")
++
++    def test_sent_from(self):
++
++        res = build_search_query(sent_from='test@example.com')
++        self.assertEqual(res, "(FROM \"test@example.com\")")
++
++    def test_sent_to(self):
++
++        res = build_search_query(sent_to='test@example.com')
++        self.assertEqual(res, "(TO \"test@example.com\")")
++
++    def test_date__gt(self):
++
++        res = build_search_query(date__gt=date(2014, 12, 31))
++        self.assertEqual(res, "(SINCE \"31-Dec-2014\")")
++
++    def test_date__lt(self):
++
++        res = build_search_query(date__lt=date(2014, 1, 1))
++        self.assertEqual(res, "(BEFORE \"1-Jan-2014\")")
